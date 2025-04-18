@@ -1,0 +1,32 @@
+[package]
+name = "simple-color-palette"
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.86"
+authors = ["Sindre Sorhus <sindresorhus@gmail.com>"]
+description = "A Rust implementation of the Simple Color Palette format"
+license = "MIT"
+repository = "https://github.com/simple-color-palette/rust-package"
+categories = [
+	"encoding",
+	"parser-implementations"
+]
+keywords = [
+	"color",
+	"palette",
+	"color-palette",
+	"json",
+	"file"
+]
+readme = "readme.md"
+include = [
+	"src/**",
+	"license"
+]
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+[dev-dependencies]
+tempfile = "3.8"
