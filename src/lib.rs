@@ -3,6 +3,10 @@
 use serde::{Deserialize, Serialize};
 use std::{fs, path::Path};
 
+const DECIMAL_PLACES: u8 = 5;
+
+// The used comment style is an intentional choice.
+
 /**
 An implementation of the [Simple Color Palette](https://simplecolorpalette.com) format — a minimal JSON-based file format for defining color palettes.
 
@@ -69,7 +73,7 @@ pub struct Color {
 /**
 Color components representing RGB values and opacity.
 
-Values are stored with full precision internally and rounded to 4 decimal places during serialization and deserialization.
+Values are stored with full precision internally and rounded to 5 decimal places during serialization and deserialization.
 
 Opacity is automatically clamped to 0.0...1.0.
 */
@@ -326,10 +330,11 @@ impl ColorComponents {
 	Returns the linear components as a rounded vector.
 	*/
 	fn to_serialized_vec(self) -> Vec<f32> {
-		let r = round(self.red);
-		let g = round(self.green);
-		let b = round(self.blue);
-		let a = round(self.opacity);
+		let r = round_to_decimal_places(self.red, DECIMAL_PLACES);
+		let g = round_to_decimal_places(self.green, DECIMAL_PLACES);
+		let b = round_to_decimal_places(self.blue, DECIMAL_PLACES);
+		let a = round_to_decimal_places(self.opacity, DECIMAL_PLACES);
+
 		if a == 1.0 {
 			vec![r, g, b]
 		} else {
@@ -342,8 +347,18 @@ impl ColorComponents {
 	*/
 	fn from_serialized_vec(v: &[f32]) -> Result<Self, &'static str> {
 		match v {
-			[r, g, b] => Ok(Self::from_linear(*r, *g, *b, None)),
-			[r, g, b, a] => Ok(Self::from_linear(*r, *g, *b, Some(a.clamp(0.0, 1.0)))),
+			[r, g, b] => Ok(Self::from_linear(
+				round_to_decimal_places(*r, DECIMAL_PLACES),
+				round_to_decimal_places(*g, DECIMAL_PLACES),
+				round_to_decimal_places(*b, DECIMAL_PLACES),
+				None,
+			)),
+			[r, g, b, a] => Ok(Self::from_linear(
+				round_to_decimal_places(*r, DECIMAL_PLACES),
+				round_to_decimal_places(*g, DECIMAL_PLACES),
+				round_to_decimal_places(*b, DECIMAL_PLACES),
+				Some(round_to_decimal_places(a.clamp(0.0, 1.0), DECIMAL_PLACES)),
+			)),
 			_ => Err("Expected 3 or 4 float values"),
 		}
 	}
@@ -351,23 +366,13 @@ impl ColorComponents {
 
 impl From<(f32, f32, f32, f32)> for ColorComponents {
 	fn from((r, g, b, a): (f32, f32, f32, f32)) -> Self {
-		Self {
-			red: r,
-			green: g,
-			blue: b,
-			opacity: a,
-		}
+		Self::from_linear(r, g, b, Some(a))
 	}
 }
 
 impl From<(f32, f32, f32)> for ColorComponents {
 	fn from((r, g, b): (f32, f32, f32)) -> Self {
-		Self {
-			red: r,
-			green: g,
-			blue: b,
-			opacity: 1.0,
-		}
+		Self::from_linear(r, g, b, None)
 	}
 }
 
@@ -409,8 +414,13 @@ impl From<serde_json::Error> for PaletteError {
 	}
 }
 
-fn round(value: f32) -> f32 {
-	(value * 10000.0).round() / 10000.0
+#[must_use]
+#[inline]
+fn round_to_decimal_places(value: f32, decimals: u8) -> f32 {
+	// Since u8 max is 255, this cast is always safe and optimal
+	let exp: i32 = decimals as i32;
+	let multiplier = 10_f32.powi(exp);
+	(value * multiplier).round() / multiplier
 }
 
 fn srgb_to_linear(srgb: f32) -> f32 {
@@ -437,10 +447,10 @@ mod tests {
 	fn test_color_conversion() {
 		let color = Color::new(0.5, 0.7, 0.3, Some(0.8), None);
 		let components = color.components();
-		assert!((components.red - 0.5).abs() < 0.0001);
-		assert!((components.green - 0.7).abs() < 0.0001);
-		assert!((components.blue - 0.3).abs() < 0.0001);
-		assert!((components.opacity - 0.8).abs() < 0.0001);
+		assert!((components.red - 0.5).abs() < 0.00001);
+		assert!((components.green - 0.7).abs() < 0.00001);
+		assert!((components.blue - 0.3).abs() < 0.00001);
+		assert!((components.opacity - 0.8).abs() < 0.00001);
 	}
 
 	#[test]
@@ -477,7 +487,7 @@ mod tests {
 			components.opacity,
 		);
 		let color2 = Color::new(r, g, b, Some(a), None);
-		let delta = 0.0001;
+		let delta = 0.00001;
 		assert!((color.components().red - color2.components().red).abs() < delta);
 		assert!((color.components().green - color2.components().green).abs() < delta);
 		assert!((color.components().blue - color2.components().blue).abs() < delta);
@@ -593,6 +603,53 @@ mod tests {
 		assert!(Color::from_hex_str("#FFFFFFFFF").is_err());
 		assert!(Color::from_hex_str("#GG0000").is_err());
 		assert!(Color::from_hex_str("#XY0000").is_err());
+	}
+
+	#[test]
+	fn test_from_tuple_clamps_opacity() {
+		// Test 4-tuple with opacity > 1.0
+		let components: ColorComponents = (1.0, 0.5, 0.5, 2.0).into();
+		assert_eq!(components.opacity, 1.0);
+
+		// Test 4-tuple with opacity < 0.0
+		let components: ColorComponents = (1.0, 0.5, 0.5, -0.5).into();
+		assert_eq!(components.opacity, 0.0);
+
+		// Test 4-tuple with valid opacity
+		let components: ColorComponents = (1.0, 0.5, 0.5, 0.75).into();
+		assert_eq!(components.opacity, 0.75);
+
+		// Test 3-tuple defaults to opacity 1.0
+		let components: ColorComponents = (1.0, 0.5, 0.5).into();
+		assert_eq!(components.opacity, 1.0);
+	}
+
+	#[test]
+	fn test_from_tuple_stores_linear_values() {
+		// From tuple should store linear values directly (not convert from sRGB)
+		let components: ColorComponents = (0.5, 0.3, 0.7, 0.8).into();
+		assert_eq!(components.red, 0.5);
+		assert_eq!(components.green, 0.3);
+		assert_eq!(components.blue, 0.7);
+		assert_eq!(components.opacity, 0.8);
+	}
+
+	#[test]
+	fn test_extended_srgb() {
+		// Test RGB values outside 0-1 range (extended sRGB / wide gamut)
+		let color = Color::from_linear(1.5, -0.5, 0.5, Some(0.5), None);
+		let linear = color.components_linear();
+		assert_eq!(linear.red, 1.5);
+		assert_eq!(linear.green, -0.5);
+		assert_eq!(linear.blue, 0.5);
+
+		// Verify it round-trips through serialization
+		let json = serde_json::to_string(&color).unwrap();
+		let parsed: Color = serde_json::from_str(&json).unwrap();
+		let parsed_linear = parsed.components_linear();
+		assert_eq!(parsed_linear.red, 1.5);
+		assert_eq!(parsed_linear.green, -0.5);
+		assert_eq!(parsed_linear.blue, 0.5);
 	}
 
 	#[test]
