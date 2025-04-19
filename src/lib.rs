@@ -1,78 +1,65 @@
 #![allow(clippy::tabs_in_doc_comments)]
 
+//! An implementation of the [Simple Color Palette](https://simplecolorpalette.com) format — a minimal JSON-based file format for defining color palettes.
+//!
+//! A palette contains colors with optional names, and the palette itself can also have a name. Colors are stored in extended sRGB color space (wide gamut). While colors are serialized in their linear form, the API primarily works with non-linear (gamma-corrected) values since these better match human perception and are what most color pickers and design tools use.
+//!
+//! ```rust
+//! use simple_color_palette::{ColorPalette, Color};
+//!
+//! let palette = ColorPalette::new(
+//! 	vec![
+//! 		Color::new(1.0, 0.0, 0.0, None, Some("Red".into())),
+//! 		Color::new(0.0, 1.0, 0.0, None, Some("Green".into())),
+//! 	],
+//! 	Some("Traffic Lights".into()),
+//! );
+//!
+//! let path = std::path::Path::new("Traffic Lights.color-palette");
+//!
+//! // Save palette
+//! palette.write_to_file(path);
+//!
+//! // Load palette
+//! let loadedPalette = ColorPalette::read_from_file(path);
+//! ```
+
 use serde::{Deserialize, Serialize};
 use std::{fs, path::Path};
 
-/**
-An implementation of the [Simple Color Palette](https://simplecolorpalette.com) format — a minimal JSON-based file format for defining color palettes.
-
-A palette contains colors with optional names, and the palette itself can also have a name. Colors are stored in extended sRGB color space (wide gamut). While colors are serialized in their linear form, the API primarily works with non-linear (gamma-corrected) values since these better match human perception and are what most color pickers and design tools use.
-
-```rust
-use simple_color_palette::{ColorPalette, Color};
-
-let palette = ColorPalette::new(
-	vec![
-		Color::new(1.0, 0.0, 0.0, None, Some("Red".into())),
-		Color::new(0.0, 1.0, 0.0, None, Some("Green".into())),
-	],
-	Some("Traffic Lights".into()),
-);
-
-let path = std::path::Path::new("Traffic Lights.color-palette");
-
-// Save palette
-palette.write_to_file(path);
-
-// Load palette
-let loadedPalette = ColorPalette::read_from_file(path);
-```
-*/
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub struct ColorPalette {
-	/**
-	List of colors in the palette.
-	*/
+	/// List of colors in the palette.
 	pub colors: Vec<Color>,
 
-	/**
-	Optional name of the palette.
-	*/
+	/// Optional name of the palette.
 	#[serde(skip_serializing_if = "Option::is_none")]
 	pub name: Option<String>,
 }
 
-/**
-Represents a single color in the palette.
-
-The color components are stored in extended linear sRGB color space, but the API primarily works with non-linear (gamma-corrected) values which better match human perception.
-*/
+/// Represents a single color in the palette.
+///
+/// The color components are stored in extended linear sRGB color space, but the API primarily works with non-linear (gamma-corrected) values which better match human perception.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Color {
-	/**
-	The color components in extended linear sRGB color space.
-
-	For most purposes, you will want to use `components()` instead which returns normal sRGB values,
-	meaning adjusted for human perception and display on screens.
-	*/
+	/// The color components in extended linear sRGB color space.
+	///
+	/// For most purposes, you will want to use `components()` instead which returns normal sRGB values,
+	/// meaning adjusted for human perception and display on screens.
 	#[serde(rename = "components", with = "color_components_as_linear")]
 	linear_components: ColorComponents,
 
-	/**
-	Optional name for the color.
-	*/
+	/// Optional name for the color.
 	#[serde(skip_serializing_if = "Option::is_none")]
 	pub name: Option<String>,
 }
 
+/// Color components representing RGB values and opacity.
+///
+/// Values are stored with full precision internally and rounded to 4 decimal places during serialization and deserialization.
+///
+/// Opacity is automatically clamped to 0.0...1.0.
 #[derive(Debug, Clone, Copy, PartialEq)]
-/**
-Color components representing RGB values and opacity.
-
-Values are stored with full precision internally and rounded to 4 decimal places during serialization and deserialization.
-
-Opacity is automatically clamped to 0.0...1.0.
-*/
 pub struct ColorComponents {
 	pub red: f32,
 	pub green: f32,
@@ -81,29 +68,34 @@ pub struct ColorComponents {
 }
 
 impl ColorPalette {
-	/**
-	Creates a new color palette with the specified colors and optional name.
-	*/
-	pub fn new(colors: Vec<Color>, name: Option<String>) -> Self {
+	/// Creates a new color palette with the specified colors and optional name.
+	#[must_use]
+	pub const fn new(colors: Vec<Color>, name: Option<String>) -> Self {
 		Self { colors, name }
 	}
 
-	/**
-	Writes the palette to a file in the Simple Color Palette format.
-
-	- `path`: The file path to write the palette to. Use the `.color-palette` file extension.
-	*/
+	/// Writes the palette to a file in the Simple Color Palette format.
+	///
+	/// # Parameters
+	/// - `path`: The file path to write the palette to. Use the `.color-palette` file extension.
+	///
+	/// # Errors
+	///
+	/// Returns an error if the file cannot be written.
 	pub fn write_to_file<P: AsRef<Path>>(&self, path: P) -> Result<(), PaletteError> {
 		let json = serde_json::to_string_pretty(self)?;
 		fs::write(path, json)?;
 		Ok(())
 	}
 
-	/**
-	Reads a palette from a file in the Simple Color Palette format.
-
-	- `path`: The file path to read the palette from.
-	*/
+	/// Reads a palette from a file in the Simple Color Palette format.
+	///
+	/// # Parameters
+	/// - `path`: The file path to read the palette from.
+	///
+	/// # Errors
+	///
+	/// Returns an error if the file cannot be read or parsed.
 	pub fn read_from_file<P: AsRef<Path>>(path: P) -> Result<Self, PaletteError> {
 		let data = fs::read_to_string(path)?;
 		Ok(serde_json::from_str(&data)?)
@@ -111,18 +103,17 @@ impl ColorPalette {
 }
 
 impl Color {
-	/**
-	Creates a color using extended non-linear sRGB components.
-
-	- Note: If you don't know the difference between linear and non-linear, this is the initializer you want.
-
-	- Parameters:
-		- red: Red component.
-		- green: Green component.
-		- blue: Blue component.
-		- opacity: Optional opacity value (0.0...1.0), defaults to 1.0.
-		- name: Optional name for the color.
-	*/
+	/// Creates a color using extended non-linear sRGB components.
+	///
+	/// - Note: If you don't know the difference between linear and non-linear, this is the initializer you want.
+	///
+	/// # Parameters
+	///	- `red`: Red component.
+	///	- `green`: Green component.
+	///	- `blue`: Blue component.
+	///	- `opacity`: Optional opacity value (0.0...1.0), defaults to 1.0.
+	///	- `name`: Optional name for the color.
+	#[must_use]
 	pub fn new(
 		red: f32,
 		green: f32,
@@ -136,18 +127,17 @@ impl Color {
 		}
 	}
 
-	/**
-	Creates a color using extended linear sRGB components.
-
-	- Note: For most purposes, you will want to use `new()` instead.
-
-	- Parameters:
-		- red: Linear red component.
-		- green: Linear green component.
-		- blue: Linear blue component.
-		- opacity: Optional opacity value (0.0...1.0), defaults to 1.0.
-		- name: Optional name for the color.
-	*/
+	/// Creates a color using extended linear sRGB components.
+	///
+	/// - Note: For most purposes, you will want to use `new()` instead.
+	///
+	/// # Parameters
+	///	- `red`: Linear red component.
+	///	- `green`: Linear green component.
+	///	- `blue`: Linear blue component.
+	///	- `opacity`: Optional opacity value (0.0...1.0), defaults to 1.0.
+	///	- `name`: Optional name for the color.
+	#[must_use]
 	pub fn from_linear(
 		red: f32,
 		green: f32,
@@ -161,37 +151,34 @@ impl Color {
 		}
 	}
 
-	/**
-	Returns the color components in extended non-linear sRGB color space.
-
-	This is probably what you want. The color components are adjusted for human perception and display on screens.
-	*/
+	/// Returns the color components in extended non-linear sRGB color space.
+	///
+	/// - Note: This is probably what you want. The color components are adjusted for human perception and display on screens.
+	#[must_use]
 	pub fn components(&self) -> ColorComponents {
 		self.linear_components.to_srgb_components()
 	}
 
-	/**
-	Returns the color components in extended linear sRGB color space.
-
-	- Note: For most purposes, you will want to use `components()` instead which returns normal sRGB values.
-	*/
-	pub fn components_linear(&self) -> &ColorComponents {
+	/// Returns the color components in extended linear sRGB color space.
+	///
+	/// - Note: For most purposes, you will want to use `components()` instead which returns normal sRGB values.
+	#[must_use]
+	pub const fn components_linear(&self) -> &ColorComponents {
 		&self.linear_components
 	}
 
-	/**
-	Creates a color from a hex string.
-
-	Supports the following formats:
-	- RGB: "#RGB" or "RGB"
-	- RGBA: "#RGBA" or "RGBA"
-	- RRGGBB: "#RRGGBB" or "RRGGBB"
-	- RRGGBBAA: "#RRGGBBAA" or "RRGGBBAA"
-
-	The "#" prefix is optional.
-
-	Returns an error if the string format is invalid.
-	*/
+	/// Creates a color from a hex string.
+	///
+	/// Supports the following formats:
+	/// - RGB: "#RGB" or "RGB"
+	/// - RGBA: "#RGBA" or "RGBA"
+	/// - RRGGBB: "#RRGGBB" or "RRGGBB"
+	/// - RRGGBBAA: "#RRGGBBAA" or "RRGGBBAA"
+	///
+	/// The "#" prefix is optional.
+	///
+	/// # Errors
+	/// Returns an error if the string format is invalid.
 	pub fn from_hex_str(hex: &str) -> Result<Self, &'static str> {
 		if hex.is_empty() {
 			return Err("Empty hex string");
@@ -224,23 +211,24 @@ impl Color {
 		let (r, g, b, a) = parse_hex(digits)?;
 
 		Ok(Self::new(
-			r as f32 / 255.0,
-			g as f32 / 255.0,
-			b as f32 / 255.0,
-			a.map(|a| a as f32 / 255.0),
+			f32::from(r) / 255.0,
+			f32::from(g) / 255.0,
+			f32::from(b) / 255.0,
+			a.map(|a| f32::from(a) / 255.0),
 			None,
 		))
 	}
 
-	/**
-	Creates a color from an integer hex value.
-
-	Supports the following formats:
-	- RGB: 0xRGB (12-bit)
-	- RGBA: 0xRGBA (16-bit)
-	- RRGGBB: 0xRRGGBB (24-bit)
-	- RRGGBBAA: 0xRRGGBBAA (32-bit)
-	*/
+	/// Creates a color from an integer hex value.
+	///
+	/// Supports the following formats:
+	/// - RGB: 0xRGB (12-bit)
+	/// - RGBA: 0xRGBA (16-bit)
+	/// - RRGGBB: 0xRRGGBB (24-bit)
+	/// - RRGGBBAA: 0xRRGGBBAA (32-bit)
+	///
+	/// # Errors
+	/// Returns an error if the hex value is not in a valid format.
 	pub fn from_hex_int(hex: u32) -> Result<Self, &'static str> {
 		let (r, g, b, a) = match hex {
 			0..=0xFFF => {
@@ -258,14 +246,14 @@ impl Color {
 				let a = (hex & 0xF) as u8;
 				(r << 4 | r, g << 4 | g, b << 4 | b, Some(a << 4 | a))
 			}
-			0x10000..=0xFFFFFF => {
+			0x10000..=0x00FF_FFFF => {
 				// 24-bit RGB
 				let r = ((hex >> 16) & 0xFF) as u8;
 				let g = ((hex >> 8) & 0xFF) as u8;
 				let b = (hex & 0xFF) as u8;
 				(r, g, b, None)
 			}
-			0x1000000..=0xFFFFFFFF => {
+			0x0100_0000..=0xFFFF_FFFF => {
 				// 32-bit RGBA
 				let r = ((hex >> 24) & 0xFF) as u8;
 				let g = ((hex >> 16) & 0xFF) as u8;
@@ -276,19 +264,18 @@ impl Color {
 		};
 
 		Ok(Self::new(
-			r as f32 / 255.0,
-			g as f32 / 255.0,
-			b as f32 / 255.0,
-			a.map(|a| a as f32 / 255.0),
+			f32::from(r) / 255.0,
+			f32::from(g) / 255.0,
+			f32::from(b) / 255.0,
+			a.map(|a| f32::from(a) / 255.0),
 			None,
 		))
 	}
 }
 
 impl ColorComponents {
-	/**
-	Creates a color from sRGB values (non-linear).
-	*/
+	/// Creates a color from sRGB values (non-linear).
+	#[must_use]
 	pub fn new(red: f32, green: f32, blue: f32, opacity: Option<f32>) -> Self {
 		Self {
 			red: srgb_to_linear(red),
@@ -298,9 +285,8 @@ impl ColorComponents {
 		}
 	}
 
-	/**
-	Creates a color from sRGB values (linear).
-	*/
+	/// Creates a color from sRGB values (linear).
+	#[must_use]
 	pub fn from_linear(red: f32, green: f32, blue: f32, opacity: Option<f32>) -> Self {
 		Self {
 			red,
@@ -310,9 +296,7 @@ impl ColorComponents {
 		}
 	}
 
-	/**
-	Converts linear components to non-linear components.
-	*/
+	/// Converts linear components to non-linear components.
 	fn to_srgb_components(self) -> Self {
 		Self {
 			red: linear_to_srgb(self.red),
@@ -322,9 +306,7 @@ impl ColorComponents {
 		}
 	}
 
-	/**
-	Returns the linear components as a rounded vector.
-	*/
+	/// Returns the linear components as a rounded vector.
 	fn to_serialized_vec(self) -> Vec<f32> {
 		let r = round(self.red);
 		let g = round(self.green);
@@ -337,11 +319,9 @@ impl ColorComponents {
 		}
 	}
 
-	/**
-	Creates linear components from a float vector (3 or 4 values).
-	*/
-	fn from_serialized_vec(v: &[f32]) -> Result<Self, &'static str> {
-		match v {
+	/// Creates linear components from a float vector (3 or 4 values).
+	fn from_serialized_vec(vec: &[f32]) -> Result<Self, &'static str> {
+		match vec {
 			[r, g, b] => Ok(Self::from_linear(*r, *g, *b, None)),
 			[r, g, b, a] => Ok(Self::from_linear(*r, *g, *b, Some(a.clamp(0.0, 1.0)))),
 			_ => Err("Expected 3 or 4 float values"),
@@ -422,10 +402,10 @@ fn srgb_to_linear(srgb: f32) -> f32 {
 }
 
 fn linear_to_srgb(linear: f32) -> f32 {
-	if linear <= 0.0031308 {
+	if linear <= 0.003_130_8 {
 		linear * 12.92
 	} else {
-		linear.powf(1.0 / 2.4) * 1.055 - 0.055
+		linear.powf(1.0 / 2.4).mul_add(1.055, -0.055)
 	}
 }
 
@@ -460,10 +440,10 @@ mod tests {
 	fn test_from_linear_and_linear_components() {
 		let color = Color::from_linear(0.1, 0.2, 0.3, Some(0.75), Some("Linear Gray".into()));
 		let linear = color.components_linear();
-		assert_eq!(linear.red, 0.1);
-		assert_eq!(linear.green, 0.2);
-		assert_eq!(linear.blue, 0.3);
-		assert_eq!(linear.opacity, 0.75);
+		assert_float_eq(linear.red, 0.1);
+		assert_float_eq(linear.green, 0.2);
+		assert_float_eq(linear.blue, 0.3);
+		assert_float_eq(linear.opacity, 0.75);
 	}
 
 	#[test]
@@ -532,12 +512,7 @@ mod tests {
 	const EPSILON: f32 = 0.002; // Increased epsilon to account for u8->f32 conversion
 
 	fn assert_float_eq(a: f32, b: f32) {
-		assert!(
-			(a - b).abs() < EPSILON,
-			"Expected {} to be close to {}",
-			a,
-			b
-		);
+		assert!((a - b).abs() < EPSILON, "Expected {a} to be close to {b}",);
 	}
 
 	#[test]
@@ -598,14 +573,14 @@ mod tests {
 	#[test]
 	fn test_from_hex_int() {
 		// Test 24-bit RGB
-		let color = Color::from_hex_int(0xFF0000).unwrap();
+		let color = Color::from_hex_int(0x00FF_0000).unwrap();
 		assert_float_eq(color.components().red, 1.0);
 		assert_float_eq(color.components().green, 0.0);
 		assert_float_eq(color.components().blue, 0.0);
 		assert_float_eq(color.components().opacity, 1.0);
 
 		// Test 32-bit RGBA
-		let color = Color::from_hex_int(0xFF000080).unwrap();
+		let color = Color::from_hex_int(0xFF00_0080).unwrap();
 		assert_float_eq(color.components().red, 1.0);
 		assert_float_eq(color.components().green, 0.0);
 		assert_float_eq(color.components().blue, 0.0);
@@ -626,21 +601,21 @@ mod tests {
 		assert_float_eq(color.components().opacity, 136.0 / 255.0); // Exact value for 0x88 (expanded from 0x8)
 
 		// Test partial values
-		let color = Color::from_hex_int(0x800000).unwrap();
+		let color = Color::from_hex_int(0x0080_0000).unwrap();
 		assert_float_eq(color.components().red, 128.0 / 255.0); // Exact value for 0x80
 		assert_float_eq(color.components().green, 0.0);
 		assert_float_eq(color.components().blue, 0.0);
 		assert_float_eq(color.components().opacity, 1.0);
 
 		// Test zero
-		let color = Color::from_hex_int(0x000000).unwrap();
+		let color = Color::from_hex_int(0x0000_0000).unwrap();
 		assert_float_eq(color.components().red, 0.0);
 		assert_float_eq(color.components().green, 0.0);
 		assert_float_eq(color.components().blue, 0.0);
 		assert_float_eq(color.components().opacity, 1.0);
 
 		// Test white
-		let color = Color::from_hex_int(0xFFFFFF).unwrap();
+		let color = Color::from_hex_int(0x00FF_FFFF).unwrap();
 		assert_float_eq(color.components().red, 1.0);
 		assert_float_eq(color.components().green, 1.0);
 		assert_float_eq(color.components().blue, 1.0);
