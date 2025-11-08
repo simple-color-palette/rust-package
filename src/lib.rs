@@ -88,7 +88,8 @@ impl ColorPalette {
 	/**
 	Creates a new color palette with the specified colors and optional name.
 	*/
-	pub fn new(colors: Vec<Color>, name: Option<String>) -> Self {
+	#[must_use]
+	pub const fn new(colors: Vec<Color>, name: Option<String>) -> Self {
 		Self { colors, name }
 	}
 
@@ -127,6 +128,7 @@ impl Color {
 		- opacity: Optional opacity value (0.0...1.0), defaults to 1.0.
 		- name: Optional name for the color.
 	*/
+	#[must_use]
 	pub fn new(
 		red: f32,
 		green: f32,
@@ -152,6 +154,7 @@ impl Color {
 		- opacity: Optional opacity value (0.0...1.0), defaults to 1.0.
 		- name: Optional name for the color.
 	*/
+	#[must_use]
 	pub fn from_linear(
 		red: f32,
 		green: f32,
@@ -170,6 +173,7 @@ impl Color {
 
 	This is probably what you want. The color components are adjusted for human perception and display on screens.
 	*/
+	#[must_use]
 	pub fn components(&self) -> ColorComponents {
 		self.linear_components.to_srgb_components()
 	}
@@ -179,7 +183,8 @@ impl Color {
 
 	- Note: For most purposes, you will want to use `components()` instead which returns normal sRGB values.
 	*/
-	pub fn components_linear(&self) -> &ColorComponents {
+	#[must_use]
+	pub const fn components_linear(&self) -> &ColorComponents {
 		&self.linear_components
 	}
 
@@ -228,10 +233,10 @@ impl Color {
 		let (r, g, b, a) = parse_hex(digits)?;
 
 		Ok(Self::new(
-			r as f32 / 255.0,
-			g as f32 / 255.0,
-			b as f32 / 255.0,
-			a.map(|a| a as f32 / 255.0),
+			f32::from(r) / 255.0,
+			f32::from(g) / 255.0,
+			f32::from(b) / 255.0,
+			a.map(|a| f32::from(a) / 255.0),
 			None,
 		))
 	}
@@ -262,14 +267,14 @@ impl Color {
 				let a = (hex & 0xF) as u8;
 				(r << 4 | r, g << 4 | g, b << 4 | b, Some(a << 4 | a))
 			}
-			0x10000..=0xFFFFFF => {
+			0x10000..=0x00FF_FFFF => {
 				// 24-bit RGB
 				let r = ((hex >> 16) & 0xFF) as u8;
 				let g = ((hex >> 8) & 0xFF) as u8;
 				let b = (hex & 0xFF) as u8;
 				(r, g, b, None)
 			}
-			0x1000000..=0xFFFFFFFF => {
+			0x0100_0000..=0xFFFF_FFFF => {
 				// 32-bit RGBA
 				let r = ((hex >> 24) & 0xFF) as u8;
 				let g = ((hex >> 16) & 0xFF) as u8;
@@ -280,10 +285,10 @@ impl Color {
 		};
 
 		Ok(Self::new(
-			r as f32 / 255.0,
-			g as f32 / 255.0,
-			b as f32 / 255.0,
-			a.map(|a| a as f32 / 255.0),
+			f32::from(r) / 255.0,
+			f32::from(g) / 255.0,
+			f32::from(b) / 255.0,
+			a.map(|a| f32::from(a) / 255.0),
 			None,
 		))
 	}
@@ -293,6 +298,7 @@ impl ColorComponents {
 	/**
 	Creates a color from sRGB values (non-linear).
 	*/
+	#[must_use]
 	pub fn new(red: f32, green: f32, blue: f32, opacity: Option<f32>) -> Self {
 		Self {
 			red: srgb_to_linear(red),
@@ -305,6 +311,7 @@ impl ColorComponents {
 	/**
 	Creates a color from sRGB values (linear).
 	*/
+	#[must_use]
 	pub fn from_linear(red: f32, green: f32, blue: f32, opacity: Option<f32>) -> Self {
 		Self {
 			red,
@@ -345,8 +352,8 @@ impl ColorComponents {
 	/**
 	Creates linear components from a float vector (3 or 4 values).
 	*/
-	fn from_serialized_vec(v: &[f32]) -> Result<Self, &'static str> {
-		match v {
+	fn from_serialized_vec(vec: &[f32]) -> Result<Self, &'static str> {
+		match vec {
 			[r, g, b] => Ok(Self::from_linear(
 				round_to_decimal_places(*r, DECIMAL_PLACES),
 				round_to_decimal_places(*g, DECIMAL_PLACES),
@@ -432,10 +439,10 @@ fn srgb_to_linear(srgb: f32) -> f32 {
 }
 
 fn linear_to_srgb(linear: f32) -> f32 {
-	if linear <= 0.0031308 {
+	if linear <= 0.003_130_8 {
 		linear * 12.92
 	} else {
-		linear.powf(1.0 / 2.4) * 1.055 - 0.055
+		linear.powf(1.0 / 2.4).mul_add(1.055, -0.055)
 	}
 }
 
@@ -470,10 +477,10 @@ mod tests {
 	fn test_from_linear_and_linear_components() {
 		let color = Color::from_linear(0.1, 0.2, 0.3, Some(0.75), Some("Linear Gray".into()));
 		let linear = color.components_linear();
-		assert_eq!(linear.red, 0.1);
-		assert_eq!(linear.green, 0.2);
-		assert_eq!(linear.blue, 0.3);
-		assert_eq!(linear.opacity, 0.75);
+		assert_float_eq(linear.red, 0.1);
+		assert_float_eq(linear.green, 0.2);
+		assert_float_eq(linear.blue, 0.3);
+		assert_float_eq(linear.opacity, 0.75);
 	}
 
 	#[test]
@@ -655,14 +662,14 @@ mod tests {
 	#[test]
 	fn test_from_hex_int() {
 		// Test 24-bit RGB
-		let color = Color::from_hex_int(0xFF0000).unwrap();
+		let color = Color::from_hex_int(0x00FF_0000).unwrap();
 		assert_float_eq(color.components().red, 1.0);
 		assert_float_eq(color.components().green, 0.0);
 		assert_float_eq(color.components().blue, 0.0);
 		assert_float_eq(color.components().opacity, 1.0);
 
 		// Test 32-bit RGBA
-		let color = Color::from_hex_int(0xFF000080).unwrap();
+		let color = Color::from_hex_int(0xFF00_0080).unwrap();
 		assert_float_eq(color.components().red, 1.0);
 		assert_float_eq(color.components().green, 0.0);
 		assert_float_eq(color.components().blue, 0.0);
@@ -683,21 +690,21 @@ mod tests {
 		assert_float_eq(color.components().opacity, 136.0 / 255.0); // Exact value for 0x88 (expanded from 0x8)
 
 		// Test partial values
-		let color = Color::from_hex_int(0x800000).unwrap();
+		let color = Color::from_hex_int(0x0080_0000).unwrap();
 		assert_float_eq(color.components().red, 128.0 / 255.0); // Exact value for 0x80
 		assert_float_eq(color.components().green, 0.0);
 		assert_float_eq(color.components().blue, 0.0);
 		assert_float_eq(color.components().opacity, 1.0);
 
 		// Test zero
-		let color = Color::from_hex_int(0x000000).unwrap();
+		let color = Color::from_hex_int(0x0000_0000).unwrap();
 		assert_float_eq(color.components().red, 0.0);
 		assert_float_eq(color.components().green, 0.0);
 		assert_float_eq(color.components().blue, 0.0);
 		assert_float_eq(color.components().opacity, 1.0);
 
 		// Test white
-		let color = Color::from_hex_int(0xFFFFFF).unwrap();
+		let color = Color::from_hex_int(0x00FF_FFFF).unwrap();
 		assert_float_eq(color.components().red, 1.0);
 		assert_float_eq(color.components().green, 1.0);
 		assert_float_eq(color.components().blue, 1.0);
