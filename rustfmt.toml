@@ -1,2 +1,4 @@
 hard_tabs = true
 tab_spaces = 4
+# Without this, rustfmt run directly (by an editor) formats differently from `cargo fmt`.
+edition = "2024"

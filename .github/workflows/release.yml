@@ -1,0 +1,29 @@
+name: Release
+# Run it from the Actions tab after the version bump is pushed to `main`. It publishes the version in `Cargo.toml` and pushes its tag.
+on: workflow_dispatch
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    # A release from any other branch would tag a commit that is not on `main`.
+    if: github.ref == 'refs/heads/main'
+    permissions:
+      # Trusted publishing, which is set up on crates.io, so there is no API token in the secrets.
+      id-token: write
+      # For pushing the tag.
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test --locked --all-features
+      # A token that is valid only for this job.
+      - uses: rust-lang/crates-io-auth-action@v1
+        id: auth
+      # It builds the packaged crate before it uploads it.
+      - run: cargo publish --locked
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+      - name: Tag
+        run: |
+          version="$(cargo metadata --no-deps --format-version 1 | jq --raw-output '.packages[0].version')"
+          git tag "$version"
+          git push origin "$version"

@@ -1,12 +1,32 @@
 name: CI
 on: [push, pull_request]
+permissions:
+  contents: read
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - run: cargo test --all-features
+      - run: cargo test --locked --all-features
       - run: cargo fmt --all -- --check
-      - run: cargo clippy --all --all-features --tests -- -D warnings
+      - run: cargo clippy --locked --all --all-features --tests -- -D warnings
+      # Catches intra-doc links that no longer resolve, which clippy does not check.
+      - run: cargo doc --all-features --no-deps
+        env:
+          RUSTDOCFLAGS: -D warnings
+      # `cargo package` only builds, so a missing `include` entry would ship a crate whose tests cannot compile. The dedicated target directory keeps the glob below from picking up a stale package.
+      - name: Test the packaged crate
+        run: |
+          cargo package --locked --target-dir "$RUNNER_TEMP/package"
+          cd "$RUNNER_TEMP"/package/package/simple-color-palette-*/
+          cargo test --locked --all-features
+  # The declared `rust-version`, which `test` does not cover.
+  msrv:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@1.99.0
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --locked --all-features
